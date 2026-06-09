@@ -53,12 +53,17 @@ cp -R "$ROOT_DIR/Helpers/"* "$RESOURCES_DIR/Helpers/"
 rm -f "$RESOURCES_DIR/Helpers/README.md"
 find "$RESOURCES_DIR/Helpers" -type f -perm -111 -exec chmod +x {} \;
 
-# Copy SwiftPM resource bundle when present. Bundle.module can resolve it from Contents/Resources.
-for RESOURCE_BUNDLE in "$BIN_DIR/${PRODUCT_NAME}_${PRODUCT_NAME}.resources" "$BIN_DIR/${PRODUCT_NAME}_${PRODUCT_NAME}.bundle"; do
-	if [[ -d "$RESOURCE_BUNDLE" ]]; then
-		cp -R "$RESOURCE_BUNDLE" "$RESOURCES_DIR/"
-	fi
-done
+# App resources are loaded via Bundle.main from Contents/Resources (see
+# AppResources.swift), NOT via SwiftPM's Bundle.module — whose generated accessor
+# only checks the .app root (a bundle there breaks code signing) and an absolute
+# build-machine path. So drop the resource files straight into Contents/Resources.
+# (majordomo.png is already copied above as the icon source.)
+NOTICES_SRC="$ROOT_DIR/Sources/Majordomo/Resources/ThirdPartyNotices.txt"
+if [[ ! -f "$NOTICES_SRC" ]]; then
+	echo "missing resource: $NOTICES_SRC" >&2
+	exit 1
+fi
+cp "$NOTICES_SRC" "$RESOURCES_DIR/ThirdPartyNotices.txt"
 
 # Generate .icns from the provided PNG.
 sips -z 16 16 "$ICON_SOURCE" --out "$ICONSET_DIR/icon_16x16.png" >/dev/null
@@ -93,9 +98,9 @@ cat >"$CONTENTS_DIR/Info.plist" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>0.1.1</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>2</string>
   <key>LSMinimumSystemVersion</key>
   <string>15.0</string>
   <key>LSUIElement</key>

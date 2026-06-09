@@ -31,9 +31,7 @@ enum AppIcon {
     }
 
     private static func makeImage(size: NSSize) -> NSImage? {
-        let resourceURL = Bundle.module.url(forResource: "majordomo", withExtension: "png")
-            ?? Bundle.main.url(forResource: "majordomo", withExtension: "png")
-            ?? Bundle.main.resourceURL?.appendingPathComponent("majordomo.png")
+        let resourceURL = Bundle.appResourceURL(forResource: "majordomo", withExtension: "png")
 
         guard let resourceURL, let source = NSImage(contentsOf: resourceURL) else {
             return nil

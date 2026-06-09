@@ -4,8 +4,8 @@
 # hand. This file is the canonical copy; on release it is synced into the public
 # `homebrew-majordomo` tap repo (see docs/DISTRIBUTION.md).
 cask "majordomo" do
-  version "0.1.0"
-  sha256 "0c7a60008e018c6961bf1f8047800b5eb7f444e4275611ac9fb95391a916272c"
+  version "0.1.1"
+  sha256 "ad9569d16f7f2f4a0499dd5ac8d09d5a3612d984bb46bb210c7fcc277737ee84"
 
   url "https://majordomo.pomr.uk/Majordomo-macOS.zip"
   name "Majordomo"

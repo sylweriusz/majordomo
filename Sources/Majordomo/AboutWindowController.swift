@@ -145,9 +145,7 @@ final class AboutWindowController: NSWindowController {
     }
 
     private static func thirdPartyNotices() -> String {
-        let url = Bundle.module.url(forResource: "ThirdPartyNotices", withExtension: "txt")
-            ?? Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "txt")
-            ?? Bundle.main.resourceURL?.appendingPathComponent("ThirdPartyNotices.txt")
+        let url = Bundle.appResourceURL(forResource: "ThirdPartyNotices", withExtension: "txt")
 
         guard let url, let text = try? String(contentsOf: url, encoding: .utf8) else {
             return L10n.text("about.notices_unavailable")

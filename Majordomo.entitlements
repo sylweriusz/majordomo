@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Entitlements for the main app under hardened runtime (notarization).
+    The app is intentionally NOT sandboxed: it injects text via the
+    Accessibility/CGEvent APIs and spawns the whisper helpers, both of which
+    the App Sandbox forbids. Microphone access is granted at runtime via TCC
+    (the NSMicrophoneUsageDescription string in Info.plist); the entitlement
+    below is required for the mic under hardened runtime.
+
+    NOTE: verify these against `codesign`/`notarytool` output for your
+    distribution before relying on them.
+  -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+</dict>
+</plist>

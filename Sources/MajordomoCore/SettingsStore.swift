@@ -27,6 +27,7 @@ public enum DefaultsKey {
     public static let appUILanguage = "appUILanguage"
     public static let hotkeyKeyCode = "hotkeyKeyCode"
     public static let hotkeyModifiers = "hotkeyModifiers"
+    public static let textInsertionStrategy = "textInsertionStrategy"
 }
 
 /// Typed, dependency-injectable wrapper over `UserDefaults` for the settings the

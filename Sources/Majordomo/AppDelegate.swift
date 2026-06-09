@@ -179,6 +179,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, DictationCoordinatorHo
             refreshSettingsWindowIfLoaded()
         }
     }
+    var currentInsertionStrategy: TextInsertionStrategy {
+        get { TextInsertionStrategy.load() }
+        set {
+            newValue.save()
+            refreshSettingsWindowIfLoaded()
+        }
+    }
     private var state: DictationState = .idle {
         didSet {
             menuBarController?.update(state: state)
@@ -343,6 +350,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, DictationCoordinatorHo
     func selectSoundProfile(_ profile: DictationSoundProfile) {
         currentSoundProfile = profile
         AppLog.info("dictation sound profile changed to \(profile.displayName)")
+    }
+
+    func selectInsertionStrategy(_ strategy: TextInsertionStrategy) {
+        currentInsertionStrategy = strategy
+        AppLog.info("text insertion strategy changed to \(strategy.rawValue)")
     }
 
     func modelStatus(for backend: TranscriptionBackendKind) -> ModelStatus {

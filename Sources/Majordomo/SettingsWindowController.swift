@@ -19,6 +19,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let whisperDictateStatusLabel = SettingsTheme.makeHintLabel("")
     private let spokenLanguagePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let soundPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let insertionPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let transcribeAudioFileButton = NSButton(title: "", target: nil, action: nil)
 
     private let indicatorEnabledButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
@@ -30,7 +31,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     init(appDelegate: AppDelegate) {
         self.appDelegate = appDelegate
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 620, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 940, height: 600),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -77,6 +78,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         configureModelPopup()
         configureSpokenLanguagePopup()
         configureSoundPopup()
+        configureInsertionPopup()
         configureIndicatorPopups()
     }
 
@@ -118,6 +120,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         selectPopupItem(spokenLanguagePopup, representedObject: appDelegate.currentLanguage)
         selectPopupItem(soundPopup, representedObject: appDelegate.currentSoundProfile.rawValue)
+        selectPopupItem(insertionPopup, representedObject: appDelegate.currentInsertionStrategy.rawValue)
 
         indicatorEnabledButton.state = appDelegate.isIndicatorEnabled ? .on : .off
         selectPopupItem(indicatorStylePopup, representedObject: appDelegate.currentIndicatorVisualStyle.rawValue)
@@ -147,7 +150,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(scrollView)
 
-        let documentView = NSView()
+        // Flipped so that when the content is shorter than the window, it pins to
+        // the TOP (a plain NSView document sticks short content to the bottom,
+        // leaving an empty gap above the header).
+        let documentView = FlippedView()
         documentView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.documentView = documentView
 
@@ -158,10 +164,38 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stack.translatesAutoresizingMaskIntoConstraints = false
         documentView.addSubview(stack)
 
+        // Two columns sized to balance height and fit the panel on screen without
+        // scrolling. The wider left column holds General + Dictation (so the long
+        // model-picker title isn't truncated); the narrower right column holds
+        // Appearance. This is the most even split of the three cards.
+        let general = makeGeneralCard()
+        let dictation = makeDictationCard()
+        let appearance = makeAppearanceCard()
+        general.widthAnchor.constraint(equalToConstant: 470).isActive = true
+        dictation.widthAnchor.constraint(equalToConstant: 470).isActive = true
+        appearance.widthAnchor.constraint(equalToConstant: 380).isActive = true
+
+        let leftColumn = NSStackView(views: [general, dictation])
+        leftColumn.orientation = .vertical
+        leftColumn.alignment = .leading
+        leftColumn.spacing = 16
+
+        let rightColumn = NSStackView(views: [appearance])
+        rightColumn.orientation = .vertical
+        rightColumn.alignment = .leading
+        rightColumn.spacing = 16
+
+        let columns = NSStackView(views: [leftColumn, rightColumn])
+        columns.orientation = .horizontal
+        columns.alignment = .top
+        columns.spacing = 20
+
+        // Equal-height columns: stretch the shorter Appearance card so both columns
+        // bottom-align — no gap between it and the footer.
+        appearance.heightAnchor.constraint(equalTo: leftColumn.heightAnchor).isActive = true
+
         stack.addArrangedSubview(makeHeaderView())
-        stack.addArrangedSubview(makeGeneralCard())
-        stack.addArrangedSubview(makeDictationCard())
-        stack.addArrangedSubview(makeAppearanceCard())
+        stack.addArrangedSubview(columns)
         stack.addArrangedSubview(makeFooterBar())
 
         NSLayoutConstraint.activate([
@@ -182,6 +216,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             stack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 20),
             stack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor, constant: -20)
         ])
+
+        // Size the window to exactly fit the content: equal 20px margins all around,
+        // footer flush to the bottom, no empty band below the buttons or on the right.
+        documentView.layoutSubtreeIfNeeded()
+        let contentSize = stack.fittingSize
+        window?.setContentSize(NSSize(width: contentSize.width + 40, height: contentSize.height + 40))
     }
 
     private func makeHeaderView() -> NSView {
@@ -227,6 +267,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         configureModelPopup()
         configureSpokenLanguagePopup()
         configureSoundPopup()
+        configureInsertionPopup()
 
         modelActionButton.bezelStyle = .rounded
         modelActionButton.controlSize = .small
@@ -243,6 +284,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stack.addArrangedSubview(whisperDictateStatusLabel)
         stack.addArrangedSubview(makeLabeledRow(label: L10n.text("panel.spoken_language_label"), control: spokenLanguagePopup))
         stack.addArrangedSubview(makeLabeledRow(label: L10n.text("settings.dictation_sound_label"), control: soundPopup))
+        stack.addArrangedSubview(makeLabeledRow(label: L10n.text("settings.insertion_method_label"), control: insertionPopup))
         return card
     }
 
@@ -284,7 +326,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         bar.addArrangedSubview(aboutButton)
         bar.addArrangedSubview(transcribeAudioFileButton)
 
-        bar.widthAnchor.constraint(equalToConstant: 580).isActive = true
+        bar.widthAnchor.constraint(equalToConstant: 870).isActive = true
         return bar
     }
 
@@ -301,12 +343,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         stack.addArrangedSubview(SettingsTheme.makeSectionTitle(sectionTitle))
 
+        // Content pins to the top; the bottom is `<=` so a card can be made taller
+        // than its content (to match the other column's height) without stretching
+        // the rows apart. Width is set by the caller per column.
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
             stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
             stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 18),
-            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -18),
-            card.widthAnchor.constraint(equalToConstant: 580)
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: card.bottomAnchor, constant: -18)
         ])
 
         return card
@@ -405,6 +449,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
         soundPopup.target = self
         soundPopup.action = #selector(selectSoundProfile)
+    }
+
+    private func configureInsertionPopup() {
+        insertionPopup.removeAllItems()
+        for strategy in TextInsertionStrategy.allCases {
+            let item = NSMenuItem(title: strategy.displayName, action: nil, keyEquivalent: "")
+            item.representedObject = strategy.rawValue
+            insertionPopup.menu?.addItem(item)
+        }
+        insertionPopup.target = self
+        insertionPopup.action = #selector(selectInsertionStrategy)
     }
 
     private func configureIndicatorPopups() {
@@ -555,6 +610,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         refreshFromAppState()
     }
 
+    @objc private func selectInsertionStrategy(_ sender: NSPopUpButton) {
+        guard !isRefreshing,
+              let rawValue = sender.selectedItem?.representedObject as? String,
+              let strategy = TextInsertionStrategy(rawValue: rawValue) else { return }
+        appDelegate?.selectInsertionStrategy(strategy)
+        refreshFromAppState()
+    }
+
     @objc private func openAudioFileTranscription() {
         appDelegate?.showAudioFileTranscriptionPanel()
     }
@@ -591,4 +654,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         appDelegate?.selectIndicatorPlacement(placement)
         refreshFromAppState()
     }
+}
+
+/// Top-origin view for use as an NSScrollView documentView, so content shorter
+/// than the viewport pins to the top instead of the bottom.
+private final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
 }

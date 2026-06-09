@@ -1,5 +1,36 @@
 import AppKit
 import ApplicationServices
+import MajordomoCore
+
+/// User-selectable order of insertion methods. Paste works in the broadest set
+/// of targets (text fields and terminals); the Accessibility selected-text API
+/// is cleaner where it works but silently no-ops in terminals.
+enum TextInsertionStrategy: String, CaseIterable {
+    case clipboardPaste
+    case accessibility
+
+    static let userDefaultsKey = DefaultsKey.textInsertionStrategy
+    static let defaultStrategy: TextInsertionStrategy = .clipboardPaste
+
+    var displayName: String {
+        switch self {
+        case .clipboardPaste: L10n.text("insertion.method_paste")
+        case .accessibility: L10n.text("insertion.method_accessibility")
+        }
+    }
+
+    static func load(from defaults: UserDefaults = .standard) -> TextInsertionStrategy {
+        guard let rawValue = defaults.string(forKey: userDefaultsKey),
+              let strategy = TextInsertionStrategy(rawValue: rawValue) else {
+            return defaultStrategy
+        }
+        return strategy
+    }
+
+    func save(to defaults: UserDefaults = .standard) {
+        defaults.set(rawValue, forKey: Self.userDefaultsKey)
+    }
+}
 
 struct TextInsertionResult: Sendable {
     let method: TextInsertionMethod
@@ -51,16 +82,32 @@ final class TextInsertionService {
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
 
-        if let processIdentifier = targetApplication?.processIdentifier,
-           Self.insertWithAccessibility(trimmedText, processIdentifier: processIdentifier) {
+        // Clipboard paste (⌘V) works in the broadest set of targets — text fields
+        // AND terminals (Terminal.app, Ghostty), where the Accessibility
+        // selected-text API returns success but inserts nothing (read-only buffer).
+        // Paste is the default; Accessibility is the alternative for those who'd
+        // rather not touch the clipboard. The non-chosen method is the fallback.
+        // The clipboard is snapshotted, restored, and marked concealed/transient so
+        // clipboard managers don't record the transcript.
+        func tryClipboardPaste() async -> TextInsertionResult? {
+            guard await Self.insertWithClipboardPaste(trimmedText) else { return nil }
+            AppLog.info("inserted text via clipboard paste into \(targetName ?? "focused app")")
+            return TextInsertionResult(method: .clipboardPasteEvent, targetApplicationName: targetName)
+        }
+        func tryAccessibility() -> TextInsertionResult? {
+            guard let processIdentifier = targetApplication?.processIdentifier,
+                  Self.insertWithAccessibility(trimmedText, processIdentifier: processIdentifier) else { return nil }
             AppLog.info("inserted text with Accessibility into \(targetName ?? "focused app")")
             return TextInsertionResult(method: .accessibilitySelectedText, targetApplicationName: targetName)
         }
 
-        AppLog.info("Accessibility insertion unavailable for \(targetName ?? "focused app"); trying clipboard paste fallback")
-        if await Self.insertWithClipboardPaste(trimmedText) {
-            AppLog.info("posted clipboard paste fallback into \(targetName ?? "focused app")")
-            return TextInsertionResult(method: .clipboardPasteEvent, targetApplicationName: targetName)
+        switch TextInsertionStrategy.load() {
+        case .clipboardPaste:
+            if let result = await tryClipboardPaste() { return result }
+            if let result = tryAccessibility() { return result }
+        case .accessibility:
+            if let result = tryAccessibility() { return result }
+            if let result = await tryClipboardPaste() { return result }
         }
 
         throw TextInsertionError.noInsertionMethodWorked(targetName)

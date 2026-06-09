@@ -17,6 +17,15 @@ cask "majordomo" do
 
   app "Majordomo.app"
 
+  # Majordomo is ad-hoc signed, not notarized by Apple. Homebrew quarantines
+  # installed apps by default, which trips Gatekeeper's "could not verify… is
+  # free of malware" block. Strip the quarantine flag so the app opens normally.
+  postflight do
+    system_command "/usr/bin/xattr",
+                   args:         ["-dr", "com.apple.quarantine", "#{appdir}/Majordomo.app"],
+                   must_succeed: false
+  end
+
   uninstall quit:      "pl.wild-matrix.majordomo",
             launchctl: "pl.wild-matrix.majordomo",
             delete:    "~/Library/LaunchAgents/pl.wild-matrix.majordomo.plist"

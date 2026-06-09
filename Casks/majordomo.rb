@@ -26,11 +26,13 @@ cask "majordomo" do
                    must_succeed: false
   end
 
-  # No `delete:` for the LaunchAgent plist — that stanza runs `sudo rm` and would
-  # prompt for a password on every uninstall. `launchctl:` unloads the agent; the
-  # plist itself (in ~/Library, user-owned) is cleaned by `--zap` below.
-  uninstall quit:      "pl.wild-matrix.majordomo",
-            launchctl: "pl.wild-matrix.majordomo"
+  # The cask must not touch launchd. Launch-at-login is owned entirely by the app
+  # (a user LaunchAgent it loads/unloads itself, no privileges). Homebrew's
+  # `launchctl:` and `delete:` uninstall directives both escalate to `sudo` —
+  # `launchctl:` probes the system domain, `delete:` runs `sudo rm` — so either
+  # would prompt for a password on every upgrade. Just quit the app; its login
+  # plist (in ~/Library, user-owned) is the app's concern and is cleared by `--zap`.
+  uninstall quit: "pl.wild-matrix.majordomo"
 
   zap trash: [
     "~/Library/Application Support/pl.wild-matrix.majordomo",

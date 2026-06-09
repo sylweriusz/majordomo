@@ -26,9 +26,11 @@ cask "majordomo" do
                    must_succeed: false
   end
 
+  # No `delete:` for the LaunchAgent plist — that stanza runs `sudo rm` and would
+  # prompt for a password on every uninstall. `launchctl:` unloads the agent; the
+  # plist itself (in ~/Library, user-owned) is cleaned by `--zap` below.
   uninstall quit:      "pl.wild-matrix.majordomo",
-            launchctl: "pl.wild-matrix.majordomo",
-            delete:    "~/Library/LaunchAgents/pl.wild-matrix.majordomo.plist"
+            launchctl: "pl.wild-matrix.majordomo"
 
   zap trash: [
     "~/Library/Application Support/pl.wild-matrix.majordomo",

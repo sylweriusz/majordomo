@@ -39,6 +39,10 @@ final class DictationCoordinator {
     private var transcriptionTask: Task<Void, Never>?
     private var targetApplication: NSRunningApplication?
 
+    /// Peak amplitude (0…1) below which a capture is treated as silent. Real
+    /// speech peaks well above 0.1; dead silence (muted/idle input) sits near 0.
+    private static let silenceThreshold: Float = 0.01
+
     init(audioRecorder: AudioRecorder,
          overlay: DictationOverlayWindowController,
          textInsertion: TextInsertionService,
@@ -166,6 +170,8 @@ final class DictationCoordinator {
         }
 
         let capture = audioRecorder.stop()
+        let inputPeak = audioRecorder.lastSessionPeak
+        let inputDescription = audioRecorder.lastInputDescription
         pendingStopAfterRecordingStart = false
         if playFeedback {
             SoundFeedback.playStop(for: host.currentSoundProfile)
@@ -203,6 +209,18 @@ final class DictationCoordinator {
 
                 try Task.checkCancellation()
                 guard self.sessionID == sessionID, host.dictationState == .transcribing else { return }
+
+                // Silent capture: Whisper hallucinates filler ("thank you") from
+                // pure silence. Surface a real diagnostic instead of inserting it.
+                if inputPeak < Self.silenceThreshold {
+                    cleanupReason = "no audible input"
+                    self.targetApplication = nil
+                    host.dictationState = .idle
+                    host.setStatusMessage(L10n.text("status.no_audio_detected"))
+                    AppLog.error("no audible mic input (peak \(String(format: "%.4f", inputPeak))); \(inputDescription) — transcript suppressed")
+                    shouldFadeOverlay = true
+                    return
+                }
 
                 host.lastTranscript = result.text
                 let insertionResult = try await self.textInsertion.insert(result.text, targetApplication: self.targetApplication)

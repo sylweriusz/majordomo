@@ -94,6 +94,41 @@ private final class AudioConverterInputState: @unchecked Sendable {
     var consumedInput = false
 }
 
+/// Tracks the peak absolute sample amplitude across a dictation session so we can
+/// tell, after the fact, whether the microphone actually delivered any signal
+/// (a silent capture makes Whisper hallucinate filler like "thank you").
+private final class PeakLevelTracker: @unchecked Sendable {
+    private let lock = NSLock()
+    private var peak: Float = 0
+
+    func update(_ data: Data) {
+        let chunkPeak = data.withUnsafeBytes { raw -> Float in
+            let floats = raw.bindMemory(to: Float.self)
+            var maxValue: Float = 0
+            for value in floats {
+                let magnitude = abs(value)
+                if magnitude > maxValue { maxValue = magnitude }
+            }
+            return maxValue
+        }
+        lock.lock()
+        if chunkPeak > peak { peak = chunkPeak }
+        lock.unlock()
+    }
+
+    func reset() {
+        lock.lock()
+        peak = 0
+        lock.unlock()
+    }
+
+    var value: Float {
+        lock.lock()
+        defer { lock.unlock() }
+        return peak
+    }
+}
+
 @MainActor
 final class AudioRecorder {
     private let engine = AVAudioEngine()
@@ -103,6 +138,13 @@ final class AudioRecorder {
     private var captureStartDate: Date?
     private var captureFormat: AVAudioFormat?
     private let tapCompletionGroup = DispatchGroup()
+    private let peakTracker = PeakLevelTracker()
+
+    /// Peak amplitude (0…1) of the most recent session's mic signal, available
+    /// after `stop()`. Near-zero means the capture was silent.
+    private(set) var lastSessionPeak: Float = 0
+    /// Human-readable input description (device · rate · channels) for diagnostics.
+    private(set) var lastInputDescription: String = ""
 
     var isRecording: Bool {
         engine.isRunning
@@ -129,6 +171,12 @@ final class AudioRecorder {
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             throw AudioRecorderError.noInputFormat
         }
+
+        peakTracker.reset()
+        let deviceName = AVCaptureDevice.default(for: .audio)?.localizedName ?? "unknown"
+        lastInputDescription = "device=\(deviceName) rate=\(Int(inputFormat.sampleRate)) ch=\(inputFormat.channelCount)"
+        lastSessionPeak = 0
+        AppLog.info("mic input: \(lastInputDescription)")
         guard let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false),
               let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
             throw AudioRecorderError.conversionUnavailable
@@ -185,6 +233,7 @@ final class AudioRecorder {
         DispatchQueue.global().sync {
             group.wait()
         }
+        lastSessionPeak = peakTracker.value
 
         defer {
             visualizer = nil
@@ -237,10 +286,12 @@ final class AudioRecorder {
         levelsHandler: @escaping @MainActor ([Float]) -> Void
     ) -> (AVAudioPCMBuffer, AVAudioTime) -> Void {
         let group = tapCompletionGroup
+        let peakTracker = self.peakTracker
         return { buffer, _ in
             group.enter()
             defer { group.leave() }
             if let pcmChunk = Self.convert(buffer: buffer, using: converter, targetFormat: targetFormat) {
+                peakTracker.update(pcmChunk)
                 captureSink.append(pcmChunk)
                 sampleHandler(pcmChunk)
             }

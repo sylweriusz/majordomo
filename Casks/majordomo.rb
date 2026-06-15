@@ -12,7 +12,7 @@ cask "majordomo" do
   desc "Local menu-bar Whisper speech-to-text"
   homepage "https://majordomo.pomr.uk"
 
-  depends_on macos: ">= :sequoia"
+  depends_on macos: :sequoia
   depends_on arch: :arm64
 
   app "Majordomo.app"

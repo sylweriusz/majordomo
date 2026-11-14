@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import MajordomoCore
+import MajordomoObjC
 
 private func expect(_ condition: @autoclosure () -> Bool, _ message: String) -> Int {
     if condition() {
@@ -127,6 +128,26 @@ private func testLegacyBackendMigrationNoOpWhenAbsent() -> Int {
     return failures
 }
 
+private func testObjCExceptionBecomesSwiftError() -> Int {
+    var failures = 0
+    var ran = false
+
+    do {
+        try MJDObjCException.catching { ran = true }
+        failures += expect(ran, "non-raising block runs")
+    } catch {
+        failures += expect(false, "non-raising block must not throw: \(error)")
+    }
+
+    do {
+        try MJDObjCException.catching { _ = NSArray().object(at: 1) }
+        failures += expect(false, "raised NSException must surface as a thrown error")
+    } catch {
+        failures += expect((error as NSError).domain == NSExceptionName.rangeException.rawValue, "error domain is the exception name")
+    }
+    return failures
+}
+
 let failureCount = testTwoQuickEscapesRequestCancel()
     + testSlowEscapesDoNotRequestCancel()
     + testNonEscapeResetsPendingEscape()
@@ -137,6 +158,7 @@ let failureCount = testTwoQuickEscapesRequestCancel()
     + testLegacyBackendMigrationCarriesValue()
     + testLegacyBackendMigrationDoesNotClobber()
     + testLegacyBackendMigrationNoOpWhenAbsent()
+    + testObjCExceptionBecomesSwiftError()
 
 if failureCount == 0 {
     print("MajordomoCoreTestRunner: all tests passed")

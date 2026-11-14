@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 import Foundation
+import MajordomoObjC
 
 struct RecordedAudioCapture: Sendable {
     let pcmData: Data
@@ -131,8 +132,12 @@ private final class PeakLevelTracker: @unchecked Sendable {
 
 @MainActor
 final class AudioRecorder {
-    private let engine = AVAudioEngine()
-    private let silentMixer = AVAudioMixerNode()
+    // Rebuilt by every start(): an engine reused across sessions stays bound to
+    // the input device it first saw, and once that device disappears (AirPods,
+    // iPhone Continuity mic, USB mic) connect/installTap raise "Input HW format
+    // and tap format not matching" on every following session.
+    private var engine = AVAudioEngine()
+    private var silentMixer = AVAudioMixerNode()
     private var visualizer: MicVisualizer?
     private var captureSink: AudioRecorderCaptureSink?
     private var captureStartDate: Date?
@@ -154,10 +159,6 @@ final class AudioRecorder {
         AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined
     }
 
-    init() {
-        engine.attach(silentMixer)
-    }
-
     func start(
         levelsHandler: @escaping @MainActor ([Float]) -> Void,
         sampleHandler: @escaping @Sendable (Data) -> Void,
@@ -165,6 +166,10 @@ final class AudioRecorder {
     ) async throws {
         try await requestMicrophoneAccess()
         _ = stop()
+
+        engine = AVAudioEngine()
+        silentMixer = AVAudioMixerNode()
+        engine.attach(silentMixer)
 
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
@@ -189,25 +194,30 @@ final class AudioRecorder {
         self.captureStartDate = Date()
         self.captureFormat = targetFormat
 
-        engine.connect(inputNode, to: silentMixer, format: inputFormat)
-        silentMixer.outputVolume = 0.001
-
-        inputNode.installTap(
-            onBus: 0,
-            bufferSize: 1024,
-            format: inputFormat,
-            block: makeTapHandler(
-                visualizer: visualizer,
-                converter: converter,
-                targetFormat: targetFormat,
-                captureSink: captureSink,
-                sampleHandler: sampleHandler,
-                levelsHandler: levelsHandler
-            )
-        )
-
-        engine.prepare()
         do {
+            // AVAudioEngine raises NSException (e.g. input format no longer
+            // matching the hardware) instead of throwing; let one escape this
+            // async frame and the app segfaults on the next main-actor check.
+            try MJDObjCException.catching {
+                engine.connect(inputNode, to: silentMixer, format: inputFormat)
+                silentMixer.outputVolume = 0.001
+
+                inputNode.installTap(
+                    onBus: 0,
+                    bufferSize: 1024,
+                    format: inputFormat,
+                    block: makeTapHandler(
+                        visualizer: visualizer,
+                        converter: converter,
+                        targetFormat: targetFormat,
+                        captureSink: captureSink,
+                        sampleHandler: sampleHandler,
+                        levelsHandler: levelsHandler
+                    )
+                )
+
+                engine.prepare()
+            }
             try engine.start()
         } catch {
             inputNode.removeTap(onBus: 0)

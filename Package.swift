@@ -13,9 +13,10 @@ let package = Package(
     ],
     targets: [
         .target(name: "MajordomoCore"),
+        .target(name: "MajordomoObjC"),
         .executableTarget(
             name: "Majordomo",
-            dependencies: ["MajordomoCore"],
+            dependencies: ["MajordomoCore", "MajordomoObjC"],
             resources: [
                 .copy("Resources/majordomo.png"),
                 .copy("Resources/ThirdPartyNotices.txt")
@@ -23,7 +24,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "MajordomoCoreTestRunner",
-            dependencies: ["MajordomoCore"],
+            dependencies: ["MajordomoCore", "MajordomoObjC"],
             path: "Tests/MajordomoCoreTestRunner"
         )
     ]
